@@ -3,9 +3,12 @@ import requests
 import re
 import threading
 import time
+import os
 
-TOKEN = "OTc2NjIyNTU2NzcxNjgwMzE3.GsVFPB.0XXrBHXU16jVbPtWE1UCmPkA634irRdygtaRmE" 
-CHANNEL_ID = "1343592641786544303" 
+# Konfigurasi dari Environment Variables
+TOKEN = os.getenv("TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+PORT = int(os.getenv("PORT", 5000))
 
 HEADERS = {
     "Authorization": TOKEN,
@@ -47,4 +50,4 @@ def index():
 
 if __name__ == "__main__":
     threading.Thread(target=update_data, daemon=True).start()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=PORT, debug=True)
