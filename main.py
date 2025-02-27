@@ -42,7 +42,7 @@ def update_data():
     global latest_data
     while True:
         latest_data = get_messages(CHANNEL_ID)
-        time.sleep(10)
+        time.sleep(69)
 
 @app.route("/")
 def index():
