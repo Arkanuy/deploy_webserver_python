@@ -7,7 +7,6 @@ import os
 import logging
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -32,23 +31,13 @@ def setup_selenium():
     options.add_argument("--window-size=1920,1080")
     
     try:
-        # First, try with the installed ChromeDriver
-        chrome_service = Service('/usr/local/bin/chromedriver')
-        driver = webdriver.Chrome(service=chrome_service, options=options)
+        # Using Chrome directly without specifying chromedriver path
+        # The selenium/standalone-chrome image has Chrome and ChromeDriver properly set up
+        driver = webdriver.Chrome(options=options)
         return driver
     except WebDriverException as e:
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
-        # Try with WebDriverManager as fallback
-        try:
-            from webdriver_manager.chrome import ChromeDriverManager
-            from selenium.webdriver.chrome.service import Service as ChromeService
-            
-            chrome_service = ChromeService(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=chrome_service, options=options)
-            return driver
-        except Exception as e2:
-            logger.error(f"Fallback WebDriver initialization also failed: {str(e2)}")
-            raise
+        raise
 
 def scrape_mods():
     driver = None
