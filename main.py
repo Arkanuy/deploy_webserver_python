@@ -94,66 +94,36 @@ def scrape_mods():
         
         logger.info(f"Mods section found, content length: {len(str(mods_section))}")
         
-        # Try multiple selectors to find mod entries
-        mod_entries = []
-        
-        # Try various selectors
-        selectors = [
-            'ul li.flex.items-start',
-            'ul li.flex',
-            'ul li',
-            'div ul li'
-        ]
-        
-        for selector in selectors:
-            entries = mods_section.select(selector)
-            logger.info(f"Selector '{selector}' found {len(entries)} entries")
-            if entries:
-                mod_entries = entries
-                break
+        # Use the exact selector from the HTML provided
+        mod_entries = mods_section.select('li.flex.items-start')
+        logger.info(f"Found {len(mod_entries)} mod entries with new selector")
         
         mods = []
         if mod_entries:
             for i, mod in enumerate(mod_entries):
                 logger.info(f"Processing entry {i}: length {len(str(mod))}")
                 
-                # Try multiple ways to extract the mod name
-                mod_name = None
-                
-                # Method 1: Look for span with break-words class
+                # Try to find the span with class break-words
                 span = mod.select_one('span.break-words')
-                if span and span.text.strip():
+                if span:
                     mod_name = span.text.strip()
-                    logger.info(f"Found mod name via span.break-words: {mod_name}")
-                
-                # Method 2: Look for any span
-                if not mod_name:
-                    spans = mod.find_all('span')
-                    for span in spans:
-                        if span.text.strip() and "No mods online" not in span.text:
-                            mod_name = span.text.strip()
-                            logger.info(f"Found mod name via generic span: {mod_name}")
-                            break
-                
-                # Method 3: Just get all text
-                if not mod_name:
-                    text = mod.get_text().strip()
-                    if text and "No mods online" not in text:
-                        mod_name = text
-                        logger.info(f"Found mod name via text content: {mod_name}")
-                
-                if mod_name:
+                    logger.info(f"Found mod name: {mod_name}")
                     mods.append(mod_name)
         
-        # Try a direct check for mod names if all else fails
+        # If we still can't find mods, try a more generic approach
         if not mods:
-            all_spans = mods_section.select('span')
-            logger.info(f"Found {len(all_spans)} spans in mods section")
-            for span in all_spans:
-                text = span.text.strip()
-                if text and "No mods online" not in text and text != "MODS CHECKER":
-                    logger.info(f"Found potential mod name from span: {text}")
-                    mods.append(text)
+            logger.info("Trying alternative method to find mods")
+            # Look for all li elements in the mods section
+            all_li = mods_section.find_all('li')
+            logger.info(f"Found {len(all_li)} li elements")
+            
+            for li in all_li:
+                spans = li.find_all('span')
+                for span in spans:
+                    text = span.text.strip()
+                    if text and "No mods online" not in text:
+                        logger.info(f"Found mod name via alternative method: {text}")
+                        mods.append(text)
         
         logger.info(f"Found {len(mods)} mods online")
         return "\n".join(mods) if mods else "No mods online."
