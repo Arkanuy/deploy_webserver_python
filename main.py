@@ -7,10 +7,13 @@ import os
 import logging
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException
+from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.utils import ChromeType
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,13 +32,14 @@ def setup_selenium():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-extensions")
     
+    # Install Chrome and get the matching ChromeDriver
     try:
-        # Using Chrome directly without specifying chromedriver path
-        # The selenium/standalone-chrome image has Chrome and ChromeDriver properly set up
-        driver = webdriver.Chrome(options=options)
+        service = Service(ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install())
+        driver = webdriver.Chrome(service=service, options=options)
         return driver
-    except WebDriverException as e:
+    except Exception as e:
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
         raise
 
