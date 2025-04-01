@@ -15,10 +15,11 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --d
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Install specific version of ChromeDriver
-RUN wget -q "https://chromedriver.storage.googleapis.com/114.0.5735.90/chromedriver_linux64.zip" \
-    && unzip chromedriver_linux64.zip -d /usr/local/bin \
-    && rm chromedriver_linux64.zip \
+# Install matching ChromeDriver for Chrome 134
+RUN wget -q "https://storage.googleapis.com/chrome-for-testing-public/134.0.6052.0/linux64/chromedriver-linux64.zip" \
+    && unzip chromedriver-linux64.zip \
+    && mv chromedriver-linux64/chromedriver /usr/local/bin/ \
+    && rm -rf chromedriver-linux64.zip chromedriver-linux64 \
     && chmod +x /usr/local/bin/chromedriver
 
 # Set up working directory
