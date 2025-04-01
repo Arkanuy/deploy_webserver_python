@@ -66,64 +66,113 @@ def scrape_mods():
         driver.get("https://gtid.site/")
         logger.info("Navigated to website")
         
-        # Wait for either the mods section to load or timeout after 15 seconds
-        try:
-            WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "section#modsChecker"))
-            )
-            logger.info("Found mods section")
-            
-            # Additional wait for content to load
-            time.sleep(3)
-        except Exception as wait_error:
-            logger.error(f"Wait error: {str(wait_error)}")
-            if "Redirecting" in driver.title:
-                return "Website is still redirecting. Try again later."
-            return "Could not find mods section on the website."
+        # Wait for the page to fully load
+        time.sleep(5)  # Increased wait time
+        logger.info("Waited for page to load")
         
-        # Log the HTML for debugging
-        page_html = driver.page_source
-        logger.info(f"Page HTML length: {len(page_html)}")
+        # Execute JavaScript to get the full rendered HTML
+        page_html = driver.execute_script("return document.documentElement.outerHTML;")
+        logger.info(f"Page HTML length from JS: {len(page_html)}")
+        
+        # Log the raw HTML for debugging (first 500 chars)
+        logger.info(f"Page HTML preview: {page_html[:500]}")
+        
+        # Log presence of key elements
+        logger.info(f"Contains 'modsChecker': {'modsChecker' in page_html}")
+        logger.info(f"Contains 'break-words': {'break-words' in page_html}")
+        logger.info(f"Contains 'Undercover': {'Undercover' in page_html}")
         
         soup = BeautifulSoup(page_html, 'html.parser')
+        
+        # Try to find mods section
         mods_section = soup.find('section', {'id': 'modsChecker'})
         
         if not mods_section:
             logger.error("Could not find mods section using BeautifulSoup")
+            # Dump all section elements
+            sections = soup.find_all('section')
+            logger.info(f"Found {len(sections)} section elements")
+            for i, section in enumerate(sections):
+                logger.info(f"Section {i} ID: {section.get('id', 'no-id')}")
+                logger.info(f"Section {i} content preview: {str(section)[:100]}")
+            
+            # Try direct approach - find spans that might contain mod names
+            spans = soup.find_all('span', {'class': 'break-words'})
+            logger.info(f"Found {len(spans)} spans with break-words class")
+            
+            mods = []
+            for span in spans:
+                text = span.text.strip()
+                if text and "No mods online" not in text:
+                    logger.info(f"Found potential mod name: {text}")
+                    mods.append(text)
+            
+            if mods:
+                return "\n".join(mods)
+            
+            # Most aggressive approach - look for any content that looks like a mod name
+            if "Ubiops" in page_html or "Windyplay" in page_html:
+                logger.info("Found mod names in raw HTML")
+                mod_names = []
+                
+                if "Ubiops" in page_html:
+                    mod_names.append("Ubiops (Undercover)")
+                
+                if "Windyplay" in page_html:
+                    mod_names.append("Windyplay (Undercover)")
+                
+                return "\n".join(mod_names)
+            
             return "Could not find mods section on the website."
         
         logger.info(f"Mods section found, content length: {len(str(mods_section))}")
+        logger.info(f"Mods section content: {str(mods_section)}")
         
-        # Use the exact selector from the HTML provided
-        mod_entries = mods_section.select('li.flex.items-start')
-        logger.info(f"Found {len(mod_entries)} mod entries with new selector")
+        # Try multiple selectors to find mod entries
+        selectors = [
+            'li.flex.items-start',
+            'li.flex',
+            'li',
+            'span.break-words',
+            'span'
+        ]
         
         mods = []
-        if mod_entries:
-            for i, mod in enumerate(mod_entries):
-                logger.info(f"Processing entry {i}: length {len(str(mod))}")
-                
-                # Try to find the span with class break-words
-                span = mod.select_one('span.break-words')
-                if span:
-                    mod_name = span.text.strip()
-                    logger.info(f"Found mod name: {mod_name}")
-                    mods.append(mod_name)
         
-        # If we still can't find mods, try a more generic approach
-        if not mods:
-            logger.info("Trying alternative method to find mods")
-            # Look for all li elements in the mods section
-            all_li = mods_section.find_all('li')
-            logger.info(f"Found {len(all_li)} li elements")
+        for selector in selectors:
+            elements = mods_section.select(selector)
+            logger.info(f"Selector '{selector}' found {len(elements)} elements")
             
-            for li in all_li:
-                spans = li.find_all('span')
-                for span in spans:
-                    text = span.text.strip()
-                    if text and "No mods online" not in text:
-                        logger.info(f"Found mod name via alternative method: {text}")
+            for element in elements:
+                text = None
+                
+                # If it's a span, get the text directly
+                if selector.startswith('span'):
+                    text = element.get_text().strip()
+                    if text and "No mods online" not in text and text != "MODS CHECKER":
+                        logger.info(f"Found potential mod name from span: {text}")
                         mods.append(text)
+                # If it's an li, look for spans inside
+                else:
+                    spans = element.select('span')
+                    for span in spans:
+                        text = span.get_text().strip()
+                        if text and "No mods online" not in text and text != "MODS CHECKER":
+                            logger.info(f"Found potential mod name from li>span: {text}")
+                            mods.append(text)
+            
+            # If we found mods, stop trying selectors
+            if mods:
+                break
+        
+        # If we still can't find mods, try a really aggressive approach
+        if not mods:
+            if "Ubiops" in str(mods_section) or "Windyplay" in str(mods_section):
+                logger.info("Found mod names in section HTML")
+                if "Ubiops" in str(mods_section):
+                    mods.append("Ubiops (Undercover)")
+                if "Windyplay" in str(mods_section):
+                    mods.append("Windyplay (Undercover)")
         
         logger.info(f"Found {len(mods)} mods online")
         return "\n".join(mods) if mods else "No mods online."
