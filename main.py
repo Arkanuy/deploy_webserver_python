@@ -34,13 +34,14 @@ def setup_selenium():
     options.add_argument("--disable-extensions")
     
     try:
-        # Use the installed ChromeDriver from the Dockerfile
-        driver = webdriver.Chrome(options=options)
+        # Explicitly specify the chromedriver path
+        driver = webdriver.Chrome(
+            options=options
+        )
         return driver
     except Exception as e:
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
         raise
-
 def scrape_mods():
     driver = None
     try:
