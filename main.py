@@ -42,6 +42,7 @@ def setup_selenium():
     except Exception as e:
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
         raise
+
 def scrape_mods():
     driver = None
     try:
@@ -71,19 +72,19 @@ def scrape_mods():
             logger.error("Could not find mods section using BeautifulSoup")
             return "Could not find mods section on the website."
             
-        # Check for "No mods online" message
-        no_mods_message = mods_section.find('span', string=lambda text: "No mods online" in str(text))
-        if no_mods_message:
-            logger.info("No mods online message found")
-            return "No mods online."
-            
-        # Find all mod entries
-        mod_entries = mods_section.select('ul li.flex.items-start')
+        # Improved mod detection logic
+        mod_entries = mods_section.select('ul li.flex')
+        
+        if not mod_entries:
+            logger.warning("No mod entries found in expected format")
+            # Try alternative selector based on the HTML you shared
+            mod_entries = mods_section.select('ul li')
         
         mods = []
         for mod in mod_entries:
-            mod_name = mod.find('span', class_='break-words')
-            if mod_name and "No mods online" not in mod_name.text:
+            # Find the span with the mod name
+            mod_name = mod.select_one('span.break-words')
+            if mod_name and mod_name.text.strip() and "No mods online" not in mod_name.text:
                 mods.append(mod_name.text.strip())
         
         logger.info(f"Found {len(mods)} mods online")
