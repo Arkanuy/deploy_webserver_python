@@ -32,17 +32,19 @@ def setup_selenium():
     options.add_argument("--window-size=1920,1080")
     
     try:
-        service = Service('/usr/local/bin/chromedriver')
-        driver = webdriver.Chrome(service=service, options=options)
+        # First, try with the installed ChromeDriver
+        chrome_service = Service('/usr/local/bin/chromedriver')
+        driver = webdriver.Chrome(service=chrome_service, options=options)
         return driver
     except WebDriverException as e:
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
         # Try with WebDriverManager as fallback
         try:
             from webdriver_manager.chrome import ChromeDriverManager
-            from selenium.webdriver.chrome.service import Service
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
+            from selenium.webdriver.chrome.service import Service as ChromeService
+            
+            chrome_service = ChromeService(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=chrome_service, options=options)
             return driver
         except Exception as e2:
             logger.error(f"Fallback WebDriver initialization also failed: {str(e2)}")
