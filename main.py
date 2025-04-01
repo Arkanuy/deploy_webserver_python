@@ -10,7 +10,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
-PORT = int(os.getenv("PORT", 5000))
+PORT = int(os.environ.get("PORT", 8000))
 
 app = Flask(__name__)
 latest_data = "No mods online."
