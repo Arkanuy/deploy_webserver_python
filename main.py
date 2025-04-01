@@ -12,7 +12,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException
-from webdriver_manager.chrome import ChromeDriverManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,15 +28,30 @@ def setup_selenium():
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
+    
+    # Add user agent to appear more like a regular browser
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.6998.165 Safari/537.36")
+    
+    # Add these arguments to make headless Chrome less detectable
+    options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-extensions")
+    
+    # Additional preferences to avoid detection
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
     
     try:
-        # Explicitly specify the chromedriver path
-        driver = webdriver.Chrome(
-            options=options
-        )
+        driver = webdriver.Chrome(options=options)
+        
+        # Execute CDP commands to make WebDriver undetectable
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """
+        })
+        
         return driver
     except Exception as e:
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
@@ -52,40 +66,94 @@ def scrape_mods():
         driver.get("https://gtid.site/")
         logger.info("Navigated to website")
         
-        # Wait for either the mods section to load or timeout after 10 seconds
+        # Wait for either the mods section to load or timeout after 15 seconds
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "section#modsChecker"))
             )
             logger.info("Found mods section")
+            
+            # Additional wait for content to load
+            time.sleep(3)
         except Exception as wait_error:
             logger.error(f"Wait error: {str(wait_error)}")
-            # If mods section not found, check if we're still on redirect page
             if "Redirecting" in driver.title:
                 return "Website is still redirecting. Try again later."
             return "Could not find mods section on the website."
         
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        # Log the HTML for debugging
+        page_html = driver.page_source
+        logger.info(f"Page HTML length: {len(page_html)}")
+        
+        soup = BeautifulSoup(page_html, 'html.parser')
         mods_section = soup.find('section', {'id': 'modsChecker'})
         
         if not mods_section:
             logger.error("Could not find mods section using BeautifulSoup")
             return "Could not find mods section on the website."
-            
-        # Improved mod detection logic
-        mod_entries = mods_section.select('ul li.flex')
         
-        if not mod_entries:
-            logger.warning("No mod entries found in expected format")
-            # Try alternative selector based on the HTML you shared
-            mod_entries = mods_section.select('ul li')
+        logger.info(f"Mods section found, content length: {len(str(mods_section))}")
+        
+        # Try multiple selectors to find mod entries
+        mod_entries = []
+        
+        # Try various selectors
+        selectors = [
+            'ul li.flex.items-start',
+            'ul li.flex',
+            'ul li',
+            'div ul li'
+        ]
+        
+        for selector in selectors:
+            entries = mods_section.select(selector)
+            logger.info(f"Selector '{selector}' found {len(entries)} entries")
+            if entries:
+                mod_entries = entries
+                break
         
         mods = []
-        for mod in mod_entries:
-            # Find the span with the mod name
-            mod_name = mod.select_one('span.break-words')
-            if mod_name and mod_name.text.strip() and "No mods online" not in mod_name.text:
-                mods.append(mod_name.text.strip())
+        if mod_entries:
+            for i, mod in enumerate(mod_entries):
+                logger.info(f"Processing entry {i}: length {len(str(mod))}")
+                
+                # Try multiple ways to extract the mod name
+                mod_name = None
+                
+                # Method 1: Look for span with break-words class
+                span = mod.select_one('span.break-words')
+                if span and span.text.strip():
+                    mod_name = span.text.strip()
+                    logger.info(f"Found mod name via span.break-words: {mod_name}")
+                
+                # Method 2: Look for any span
+                if not mod_name:
+                    spans = mod.find_all('span')
+                    for span in spans:
+                        if span.text.strip() and "No mods online" not in span.text:
+                            mod_name = span.text.strip()
+                            logger.info(f"Found mod name via generic span: {mod_name}")
+                            break
+                
+                # Method 3: Just get all text
+                if not mod_name:
+                    text = mod.get_text().strip()
+                    if text and "No mods online" not in text:
+                        mod_name = text
+                        logger.info(f"Found mod name via text content: {mod_name}")
+                
+                if mod_name:
+                    mods.append(mod_name)
+        
+        # Try a direct check for mod names if all else fails
+        if not mods:
+            all_spans = mods_section.select('span')
+            logger.info(f"Found {len(all_spans)} spans in mods section")
+            for span in all_spans:
+                text = span.text.strip()
+                if text and "No mods online" not in text and text != "MODS CHECKER":
+                    logger.info(f"Found potential mod name from span: {text}")
+                    mods.append(text)
         
         logger.info(f"Found {len(mods)} mods online")
         return "\n".join(mods) if mods else "No mods online."
