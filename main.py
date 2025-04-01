@@ -33,10 +33,9 @@ def setup_selenium():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-extensions")
     
-    # Install Chrome and get the matching ChromeDriver
     try:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
+        # Use the installed ChromeDriver from the Dockerfile
+        driver = webdriver.Chrome(options=options)
         return driver
     except Exception as e:
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
