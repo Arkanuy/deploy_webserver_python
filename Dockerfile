@@ -1,30 +1,23 @@
-FROM python:3.9-slim
+FROM selenium/standalone-chrome:latest
 
-# Install dependencies
+USER root
+
+# Install Python and pip
 RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    unzip \
-    curl \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/*
-
-# Skip ChromeDriver installation, let webdriver-manager handle it
-
-# Set up working directory
 WORKDIR /app
 
-# Copy files 
+# Copy your application files
 COPY . .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Switch back to non-root user
+USER seluser
 
 # Command to run the application
-CMD ["python", "main.py"]
+CMD ["python3", "main.py"]
