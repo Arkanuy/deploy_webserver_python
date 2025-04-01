@@ -13,7 +13,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.utils import ChromeType
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +35,7 @@ def setup_selenium():
     
     # Install Chrome and get the matching ChromeDriver
     try:
-        service = Service(ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install())
+        service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         return driver
     except Exception as e:
