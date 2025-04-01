@@ -1,5 +1,5 @@
-flask
-werkzeug
-selenium
-beautifulsoup4
-requests
+flask==2.3.3
+selenium==4.14.0
+beautifulsoup4==4.12.2
+requests==2.31.0
+webdriver-manager==4.0.0
