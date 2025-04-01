@@ -6,6 +6,7 @@ import time
 import os
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -23,11 +24,12 @@ def setup_selenium():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
-    options.binary_location = "/usr/bin/google-chrome"  # Path khusus di Koyeb
-    driver = webdriver.Chrome(
-        options=options,
-        executable_path="/usr/bin/chromedriver"  # Path chromedriver
-    )
+    # No need to specify binary location - it will use the default Chrome installation
+    # No need to specify executable_path - let Selenium handle it
+    
+    # Use the newer Service approach instead of executable_path
+    service = Service('/usr/local/bin/chromedriver')
+    driver = webdriver.Chrome(service=service, options=options)
     return driver
 
 def scrape_mods():
