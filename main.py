@@ -4,6 +4,11 @@ from bs4 import BeautifulSoup
 import threading
 import time
 import os
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 
 PORT = int(os.getenv("PORT", 5000))
 
@@ -11,45 +16,44 @@ app = Flask(__name__)
 latest_data = "No mods online."
 last_updated = 0
 
+def setup_selenium():
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.binary_location = "/usr/bin/google-chrome"  # Path khusus di Koyeb
+    driver = webdriver.Chrome(
+        options=options,
+        executable_path="/usr/bin/chromedriver"  # Path chromedriver
+    )
+    return driver
+
 def scrape_mods():
+    driver = None
     try:
-        session = requests.Session()
-        session.max_redirects = 5  # Limit redirects
+        driver = setup_selenium()
+        driver.get("https://gtid.site/")
         
-        # First try to follow redirects automatically
-        response = session.get(
-            "https://gtid.site/",
-            headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            },
-            allow_redirects=True,
-            timeout=10
-        )
+        # Wait for either the mods section to load or timeout after 10 seconds
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "section#modsChecker"))
+            )
+        except:
+            # If mods section not found, check if we're still on redirect page
+            if "Redirecting" in driver.title:
+                return "Website is still redirecting. Try again later."
+            return "Could not find mods section on the website."
         
-        # If we get HTML with meta refresh, try to extract the destination URL
-        if 'meta http-equiv="refresh"' in response.text.lower():
-            soup = BeautifulSoup(response.text, 'html.parser')
-            meta_refresh = soup.find('meta', attrs={'http-equiv': 'refresh'})
-            if meta_refresh:
-                content = meta_refresh.get('content', '')
-                if 'url=' in content.lower():
-                    redirect_url = content.split('url=')[1]
-                    response = session.get(
-                        redirect_url,
-                        headers={
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                        },
-                        allow_redirects=True,
-                        timeout=10
-                    )
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
         mods_section = soup.find('section', {'id': 'modsChecker'})
         
         if not mods_section:
             return "Could not find mods section on the website."
             
-        # Check if the default "No mods online" message is present
+        # Check for "No mods online" message
         no_mods_message = mods_section.find('span', string=lambda text: "No mods online" in str(text))
         if no_mods_message:
             return "No mods online."
@@ -65,10 +69,11 @@ def scrape_mods():
         
         return "\n".join(mods) if mods else "No mods online."
     
-    except requests.RequestException as e:
-        return f"Error scraping website: {str(e)}"
     except Exception as e:
-        return f"Unexpected error: {str(e)}"
+        return f"Error: {str(e)}"
+    finally:
+        if driver:
+            driver.quit()
 
 def update_data():
     global latest_data, last_updated
