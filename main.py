@@ -12,6 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException, TimeoutException
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -70,6 +71,22 @@ def setup_selenium():
         logger.error(f"Failed to initialize WebDriver: {str(e)}")
         raise
 
+def extract_mod_name(text):
+    """Extract just the mod name from text that might include status like '(Undercover)'"""
+    # Extract just the name part and convert to lowercase
+    if not text:
+        return None
+    
+    # If text contains a parenthesis, extract the part before it
+    match = re.match(r'^([^(]+)', text)
+    if match:
+        name = match.group(1).strip().lower()
+        logger.info(f"Extracted name '{name}' from '{text}'")
+        return name
+    
+    # Otherwise just return the entire text in lowercase
+    return text.strip().lower()
+
 def scrape_mods():
     driver = None
     try:
@@ -126,7 +143,8 @@ def scrape_mods():
         try:
             mod_spans = driver.find_elements(By.XPATH, "//section[@id='modsChecker']//span[@class='break-words']")
             if mod_spans:
-                mods = [span.text for span in mod_spans if span.text.strip()]
+                mods = [extract_mod_name(span.text) for span in mod_spans if span.text.strip()]
+                mods = [mod for mod in mods if mod]  # Filter out None values
                 logger.info(f"Found {len(mods)} mods via XPath")
                 if mods:
                     return "\n".join(mods)
@@ -137,7 +155,8 @@ def scrape_mods():
         try:
             mod_spans = driver.find_elements(By.XPATH, "//span[contains(@class, 'break-words')]")
             if mod_spans:
-                mods = [span.text for span in mod_spans if span.text.strip() and "No mods online" not in span.text]
+                mods = [extract_mod_name(span.text) for span in mod_spans if span.text.strip() and "No mods online" not in span.text]
+                mods = [mod for mod in mods if mod]  # Filter out None values
                 logger.info(f"Found {len(mods)} mods via lenient XPath")
                 if mods:
                     return "\n".join(mods)
@@ -167,28 +186,25 @@ def scrape_mods():
             mod_names = []
             
             # Look for specific patterns in the HTML that might indicate mod names
-            patterns = [
-                "Ubiops (Undercover)",
-                "Windyplay (Undercover)",
+            patterns = {
+                "Ubiops (Undercover)": "ubiops",
+                "Windyplay (Undercover)": "windyplay",
                 # Add any other known mod names here
-            ]
+            }
             
-            for pattern in patterns:
+            for pattern, mod_name in patterns.items():
                 if pattern in page_html:
-                    logger.info(f"Found mod name via pattern matching: {pattern}")
-                    mod_names.append(pattern)
+                    logger.info(f"Found mod name via pattern matching: {pattern} -> {mod_name}")
+                    mod_names.append(mod_name)
             
             if mod_names:
                 return "\n".join(mod_names)
             
             # Look for mentions of names without the "(Undercover)" part
-            if "Ubiops" in page_html:
-                logger.info("Found Ubiops in raw HTML")
-                mod_names.append("Ubiops (Undercover)")
-            
-            if "Windyplay" in page_html:
-                logger.info("Found Windyplay in raw HTML")
-                mod_names.append("Windyplay (Undercover)")
+            for name in ["Ubiops", "Windyplay"]:
+                if name in page_html:
+                    logger.info(f"Found {name} in raw HTML")
+                    mod_names.append(name.lower())
             
             if mod_names:
                 return "\n".join(mod_names)
@@ -201,8 +217,10 @@ def scrape_mods():
             for span in spans:
                 text = span.text.strip()
                 if text and "No mods online" not in text:
-                    logger.info(f"Found potential mod name from span with 'break' class: {text}")
-                    mods.append(text)
+                    mod_name = extract_mod_name(text)
+                    if mod_name:
+                        logger.info(f"Found potential mod name from span with 'break' class: {text} -> {mod_name}")
+                        mods.append(mod_name)
             
             if mods:
                 return "\n".join(mods)
@@ -230,9 +248,10 @@ def scrape_mods():
                 for element in elements:
                     text = element.get_text().strip()
                     if text and "No mods online" not in text and text != "MODS CHECKER":
-                        logger.info(f"Found potential mod name from selector '{selector}': {text}")
-                        if text not in mods:  # Avoid duplicates
-                            mods.append(text)
+                        mod_name = extract_mod_name(text)
+                        if mod_name and mod_name not in mods:  # Avoid duplicates
+                            logger.info(f"Found potential mod name from selector '{selector}': {text} -> {mod_name}")
+                            mods.append(mod_name)
             except Exception as e:
                 logger.error(f"Error with selector '{selector}': {e}")
         
