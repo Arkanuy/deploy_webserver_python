@@ -2,3 +2,4 @@ flask
 werkzeug
 selenium
 beautifulsoup4
+requests
