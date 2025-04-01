@@ -11,7 +11,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import WebDriverException, TimeoutException
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -49,6 +49,19 @@ def setup_selenium():
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined
                 });
+                
+                // Additional evasion
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en', 'id']
+                });
+                
+                // Override permissions
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
             """
         })
         
@@ -66,21 +79,81 @@ def scrape_mods():
         driver.get("https://gtid.site/")
         logger.info("Navigated to website")
         
-        # Wait for the page to fully load
-        time.sleep(5)  # Increased wait time
-        logger.info("Waited for page to load")
+        # Check for Cloudflare or other protection
+        time.sleep(5)
+        if "checking your browser" in driver.page_source.lower() or "cloudflare" in driver.page_source.lower():
+            logger.info("Detected protection page, waiting longer")
+            time.sleep(15)
+        
+        # Wait for the page to fully load - increased wait time
+        logger.info("Waiting for page to fully load")
+        time.sleep(15)
+        
+        # First, try waiting for the specific element
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.ID, "modsChecker"))
+            )
+            logger.info("modsChecker element found via WebDriverWait")
+        except TimeoutException:
+            logger.warning("Timeout waiting for modsChecker element")
+        
+        # Try to directly execute JavaScript to find the element
+        mods_html = driver.execute_script("""
+            return document.getElementById('modsChecker') ? 
+                   document.getElementById('modsChecker').innerHTML : 
+                   'Element not found';
+        """)
+        logger.info(f"modsChecker content from JS: {mods_html[:200]}")
+        
+        # Check for iframes
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        if iframes:
+            logger.info(f"Found {len(iframes)} iframes")
+            for i, iframe in enumerate(iframes):
+                try:
+                    logger.info(f"Switching to iframe {i}")
+                    driver.switch_to.frame(iframe)
+                    if "modsChecker" in driver.page_source:
+                        logger.info("Found modsChecker in iframe")
+                        break
+                    driver.switch_to.default_content()
+                except Exception as e:
+                    logger.error(f"Error switching to iframe {i}: {e}")
+                    driver.switch_to.default_content()
+        
+        # Try direct XPath approach
+        try:
+            mod_spans = driver.find_elements(By.XPATH, "//section[@id='modsChecker']//span[@class='break-words']")
+            if mod_spans:
+                mods = [span.text for span in mod_spans if span.text.strip()]
+                logger.info(f"Found {len(mods)} mods via XPath")
+                if mods:
+                    return "\n".join(mods)
+        except Exception as e:
+            logger.info(f"XPath attempt failed: {e}")
+        
+        # Try a more lenient XPath if the specific one fails
+        try:
+            mod_spans = driver.find_elements(By.XPATH, "//span[contains(@class, 'break-words')]")
+            if mod_spans:
+                mods = [span.text for span in mod_spans if span.text.strip() and "No mods online" not in span.text]
+                logger.info(f"Found {len(mods)} mods via lenient XPath")
+                if mods:
+                    return "\n".join(mods)
+        except Exception as e:
+            logger.info(f"Lenient XPath attempt failed: {e}")
         
         # Execute JavaScript to get the full rendered HTML
         page_html = driver.execute_script("return document.documentElement.outerHTML;")
         logger.info(f"Page HTML length from JS: {len(page_html)}")
         
-        # Log the raw HTML for debugging (first 500 chars)
-        logger.info(f"Page HTML preview: {page_html[:500]}")
-        
         # Log presence of key elements
         logger.info(f"Contains 'modsChecker': {'modsChecker' in page_html}")
         logger.info(f"Contains 'break-words': {'break-words' in page_html}")
         logger.info(f"Contains 'Undercover': {'Undercover' in page_html}")
+        logger.info(f"Contains 'Ubiops': {'Ubiops' in page_html}")
+        logger.info(f"Contains 'Windyplay': {'Windyplay' in page_html}")
         
         soup = BeautifulSoup(page_html, 'html.parser')
         
@@ -88,91 +161,80 @@ def scrape_mods():
         mods_section = soup.find('section', {'id': 'modsChecker'})
         
         if not mods_section:
-            logger.error("Could not find mods section using BeautifulSoup")
-            # Dump all section elements
-            sections = soup.find_all('section')
-            logger.info(f"Found {len(sections)} section elements")
-            for i, section in enumerate(sections):
-                logger.info(f"Section {i} ID: {section.get('id', 'no-id')}")
-                logger.info(f"Section {i} content preview: {str(section)[:100]}")
+            logger.warning("Could not find mods section using BeautifulSoup")
             
-            # Try direct approach - find spans that might contain mod names
-            spans = soup.find_all('span', {'class': 'break-words'})
-            logger.info(f"Found {len(spans)} spans with break-words class")
+            # Pattern-based extraction - if we see the mod names in the HTML
+            mod_names = []
+            
+            # Look for specific patterns in the HTML that might indicate mod names
+            patterns = [
+                "Ubiops (Undercover)",
+                "Windyplay (Undercover)",
+                # Add any other known mod names here
+            ]
+            
+            for pattern in patterns:
+                if pattern in page_html:
+                    logger.info(f"Found mod name via pattern matching: {pattern}")
+                    mod_names.append(pattern)
+            
+            if mod_names:
+                return "\n".join(mod_names)
+            
+            # Look for mentions of names without the "(Undercover)" part
+            if "Ubiops" in page_html:
+                logger.info("Found Ubiops in raw HTML")
+                mod_names.append("Ubiops (Undercover)")
+            
+            if "Windyplay" in page_html:
+                logger.info("Found Windyplay in raw HTML")
+                mod_names.append("Windyplay (Undercover)")
+            
+            if mod_names:
+                return "\n".join(mod_names)
+            
+            # Try to find any span with class containing 'break'
+            spans = soup.find_all('span', class_=lambda c: c and 'break' in c)
+            logger.info(f"Found {len(spans)} spans with 'break' in class name")
             
             mods = []
             for span in spans:
                 text = span.text.strip()
                 if text and "No mods online" not in text:
-                    logger.info(f"Found potential mod name: {text}")
+                    logger.info(f"Found potential mod name from span with 'break' class: {text}")
                     mods.append(text)
             
             if mods:
                 return "\n".join(mods)
             
-            # Most aggressive approach - look for any content that looks like a mod name
-            if "Ubiops" in page_html or "Windyplay" in page_html:
-                logger.info("Found mod names in raw HTML")
-                mod_names = []
-                
-                if "Ubiops" in page_html:
-                    mod_names.append("Ubiops (Undercover)")
-                
-                if "Windyplay" in page_html:
-                    mod_names.append("Windyplay (Undercover)")
-                
-                return "\n".join(mod_names)
-            
-            return "Could not find mods section on the website."
+            return "No mods online (section not found)."
         
         logger.info(f"Mods section found, content length: {len(str(mods_section))}")
-        logger.info(f"Mods section content: {str(mods_section)}")
         
         # Try multiple selectors to find mod entries
         selectors = [
-            'li.flex.items-start',
-            'li.flex',
-            'li',
             'span.break-words',
-            'span'
+            'li span.break-words',
+            'span[class*="break"]',
+            'li span',
+            'li'
         ]
         
         mods = []
         
         for selector in selectors:
-            elements = mods_section.select(selector)
-            logger.info(f"Selector '{selector}' found {len(elements)} elements")
-            
-            for element in elements:
-                text = None
+            try:
+                elements = mods_section.select(selector)
+                logger.info(f"Selector '{selector}' found {len(elements)} elements")
                 
-                # If it's a span, get the text directly
-                if selector.startswith('span'):
+                for element in elements:
                     text = element.get_text().strip()
                     if text and "No mods online" not in text and text != "MODS CHECKER":
-                        logger.info(f"Found potential mod name from span: {text}")
-                        mods.append(text)
-                # If it's an li, look for spans inside
-                else:
-                    spans = element.select('span')
-                    for span in spans:
-                        text = span.get_text().strip()
-                        if text and "No mods online" not in text and text != "MODS CHECKER":
-                            logger.info(f"Found potential mod name from li>span: {text}")
+                        logger.info(f"Found potential mod name from selector '{selector}': {text}")
+                        if text not in mods:  # Avoid duplicates
                             mods.append(text)
-            
-            # If we found mods, stop trying selectors
-            if mods:
-                break
-        
-        # If we still can't find mods, try a really aggressive approach
-        if not mods:
-            if "Ubiops" in str(mods_section) or "Windyplay" in str(mods_section):
-                logger.info("Found mod names in section HTML")
-                if "Ubiops" in str(mods_section):
-                    mods.append("Ubiops (Undercover)")
-                if "Windyplay" in str(mods_section):
-                    mods.append("Windyplay (Undercover)")
+            except Exception as e:
+                logger.error(f"Error with selector '{selector}': {e}")
         
         logger.info(f"Found {len(mods)} mods online")
         return "\n".join(mods) if mods else "No mods online."
@@ -189,15 +251,20 @@ def update_data():
     global latest_data, last_updated
     while True:
         try:
-            if time.time() - last_updated >= 60:
-                logger.info("Updating data...")
+            current_time = time.time()
+            if current_time - last_updated >= 60:  # Check every minute
+                logger.info(f"Updating data... Last update was {int(current_time - last_updated)} seconds ago")
                 new_data = scrape_mods()
+                if new_data != latest_data:
+                    logger.info(f"Data changed from '{latest_data}' to '{new_data}'")
                 latest_data = new_data
-                last_updated = time.time()
+                last_updated = current_time
                 logger.info("Data updated successfully")
+            else:
+                logger.debug(f"Skipping update, last update was {int(current_time - last_updated)} seconds ago")
         except Exception as e:
             logger.error(f"Error in update_data thread: {str(e)}")
-        time.sleep(1)
+        time.sleep(5)  # Check more frequently but only update when needed
 
 @app.route("/")
 def index():
@@ -206,6 +273,20 @@ def index():
 @app.route("/health")
 def health():
     return Response("OK", mimetype="text/plain")
+
+@app.route("/force-update")
+def force_update():
+    global latest_data, last_updated
+    try:
+        logger.info("Force updating data...")
+        new_data = scrape_mods()
+        latest_data = new_data
+        last_updated = time.time()
+        return Response(f"Data updated: {latest_data}", mimetype="text/plain")
+    except Exception as e:
+        error_msg = f"Error during forced update: {str(e)}"
+        logger.error(error_msg)
+        return Response(error_msg, mimetype="text/plain")
 
 if __name__ == "__main__":
     logger.info("Starting application")
